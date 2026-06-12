@@ -1,3 +1,4 @@
+cat > .gitignore << 'EOF'
 # Python cache
 __pycache__/
 *.pyc
@@ -5,14 +6,10 @@ __pycache__/
 *.pyd
 .Python
 
-# Models (file quá lớn)
-models/
 *.gguf
 *.onnx
 *.bin
 
-# Documents
-documents/
 
 # Environment
 .env
@@ -27,3 +24,4 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+EOF

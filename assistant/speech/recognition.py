@@ -30,22 +30,29 @@ def get_whisper_model() -> Any:
 
 
 def wav_to_text(audio_input: Union[str, BinaryIO, np.ndarray]) -> str:
-    """Transcribe audio to text using Whisper.
+    try:
+        whisper_model = get_whisper_model()
 
-    Args:
-        audio_input: Path to the WAV file, a file-like object, or numpy array to transcribe
+        segments, info = whisper_model.transcribe(
+            audio_input,
+            language=WHISPER_LANGUAGE,
+            task="transcribe",
+            vad_filter=False,
+            condition_on_previous_text=False,
+            no_speech_threshold=0.8,       
+            log_prob_threshold=-1.5,     
+            compression_ratio_threshold=2.4, 
+            beam_size=5,
+            best_of=5,
+        )
 
-    Returns:
-        The transcribed text
-    """
-    whisper_model = get_whisper_model()
-    segments, _ = whisper_model.transcribe(
-        audio_input,
-        language=WHISPER_LANGUAGE,
-        task="transcribe",
-    )
-    return "".join(segment.text for segment in segments)
+        result = "".join(segment.text for segment in segments).strip()
+        print(f"[Whisper] Detected language: {info.language} | Transcript: {result!r}")
+        return result
 
+    except Exception as e:
+        print(f"[Whisper] ERROR {type(e).__name__}: {e}")
+        return ""
 
 
 def extract_prompt(transcribed_text: str, wake_word: str = "") -> Optional[str]:

@@ -6,8 +6,11 @@ Run with: streamlit run app.py
 import os
 import io
 import base64
+import tempfile
 from typing import Optional
 
+import numpy as np
+import soundfile as sf
 import streamlit as st
 
 # ─────────────────────────────────────────────
@@ -498,12 +501,102 @@ def render_text_input() -> None:
     if submitted and user_text and user_text.strip():
         _queue_user_input(user_text.strip())
 
+# ─────────────────────────────────────────────
+# Audio helper utilities
+# ─────────────────────────────────────────────
+
+def _detect_audio_format(raw_bytes: bytes) -> str:
+    if len(raw_bytes) < 4:
+        print("[Audio] raw_bytes too short to detect format.")
+        return "unknown"
+    if raw_bytes[:4] == b"RIFF":
+        return "wav"
+    if raw_bytes[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm"
+    if raw_bytes[:4] == b"OggS":
+        return "ogg"
+
+    print(f"[Audio] Unknown header bytes: {raw_bytes[:4].hex()}")
+    return "unknown"
+
+
+def _read_wav_with_soundfile(wav_bytes: bytes):
+    try:
+        buf = io.BytesIO(wav_bytes)
+        audio_data, sample_rate = sf.read(buf, dtype="float32")
+        print(f"[Audio] soundfile read OK: {sample_rate}Hz, shape={audio_data.shape}")
+        return audio_data, sample_rate
+    except Exception as e:
+        print(f"[Audio] soundfile read failed: {e}")
+        return None, None
+
+
+def _write_wav_with_soundfile(audio_data: np.ndarray, sample_rate: int) -> bytes:
+    if audio_data.ndim == 2:
+        audio_data = audio_data.mean(axis=1)
+        print(f"[Audio] Converted stereo to mono.")
+    if sample_rate != 16000:
+        duration = len(audio_data) / sample_rate
+        target_length = int(duration * 16000)
+        audio_data = np.interp(
+            np.linspace(0, len(audio_data) - 1, target_length),
+            np.arange(len(audio_data)),
+            audio_data,
+        )
+        print(f"[Audio] Resampled {sample_rate}Hz → 16000Hz ({target_length} samples)")
+        sample_rate = 16000
+
+    out_buf = io.BytesIO()
+    sf.write(out_buf, audio_data, sample_rate, format="WAV", subtype="PCM_16")
+    result = out_buf.getvalue()
+    print(f"[Audio] Written WAV: {len(result)} bytes at 16kHz mono PCM_16")
+    return result
+
+
+def _convert_audio_to_wav(raw_bytes: bytes) -> bytes | None:
+    fmt = _detect_audio_format(raw_bytes)
+    print(f"[Audio] _convert_audio_to_wav: fmt={fmt}, size={len(raw_bytes)} bytes")
+
+    if fmt == "wav":
+        audio_data, sample_rate = _read_wav_with_soundfile(raw_bytes)
+        if audio_data is not None:
+            return _write_wav_with_soundfile(audio_data, sample_rate)
+        print("[Audio] soundfile failed on WAV bytes — returning None.")
+        return None
+
+    print(f"[Audio] Format '{fmt}' not decodable by soundfile — returning None for temp-file fallback.")
+    return None
+
+
+def _get_suffix_for_format(fmt: str) -> str:
+    mapping = {
+        "wav":     ".wav",
+        "webm":    ".webm",
+        "ogg":     ".ogg",
+        "unknown": ".webm",  # Best guess — browsers usually emit WebM
+    }
+    result = mapping.get(fmt, ".webm")
+    print(f"[Audio] _get_suffix_for_format: '{fmt}' → '{result}'")
+    return result
+
+
+def _save_audio_to_tempfile(raw_bytes: bytes, suffix: str) -> str:
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=suffix,
+        prefix="voice_input_",
+    )
+    tmp.write(raw_bytes)
+    tmp.close()
+    print(f"[Audio] Saved temp file: {tmp.name} ({len(raw_bytes)} bytes)")
+    return tmp.name
+
 
 # ─────────────────────────────────────────────
 # Input mode: Voice
 # ─────────────────────────────────────────────
+
 def render_audio_input() -> None:
-    """Record audio, transcribe with Whisper, then queue as text input."""
     st.markdown("#### 🎙️ Voice Input")
 
     disabled = st.session_state.is_processing
@@ -519,25 +612,62 @@ def render_audio_input() -> None:
     audio_value = st.audio_input("Record your question", key="audio_recorder")
 
     if audio_value is not None:
-        st.audio(audio_value, format="audio/wav")
+        raw_bytes = audio_value.getvalue()
+        fmt = _detect_audio_format(raw_bytes)
+
+        st.caption(f"Detected format: `{fmt}` | Size: `{len(raw_bytes):,}` bytes")
+        wav_bytes = _convert_audio_to_wav(raw_bytes)
+
+        if wav_bytes:
+            # Clean normalized WAV — browser can play this directly
+            st.audio(wav_bytes, format="audio/wav")
+        else:
+            st.caption(
+                f"ℹ️ Format `{fmt}` — playback skipped on Windows (no ffmpeg). "
+                "Recording is valid. Click **Transcribe & Send** to proceed."
+            )
 
         if st.button("📤 Transcribe & Send", key="transcribe_btn"):
-            with st.spinner("Transcribing…"):
+            with st.spinner("Transcribing audio…"):
+                tmp_path: str | None = None
                 try:
                     from assistant.speech import wav_to_text
-                    raw = (
-                        audio_value.read()
-                        if hasattr(audio_value, "read")
-                        else bytes(audio_value)
-                    )
-                    transcript = wav_to_text(io.BytesIO(raw))
+
+                    transcript: str = ""
+
+                    if wav_bytes is not None:
+                        print("[Transcribe] Path A: normalized WAV → BytesIO")
+                        audio_buffer = io.BytesIO(wav_bytes)
+                        transcript = wav_to_text(audio_buffer)
+
+                    else:
+                        suffix = _get_suffix_for_format(fmt)
+                        tmp_path = _save_audio_to_tempfile(raw_bytes, suffix)
+                        print(f"[Transcribe] Path B: temp file → {tmp_path}")
+                        transcript = wav_to_text(tmp_path)
+
+                    print(f"[Transcribe] Raw transcript: {transcript!r}")
+
                     if transcript and transcript.strip():
-                        st.markdown(f"**Transcript:** _{transcript}_")
+                        st.markdown(f"**Transcript:** _{transcript.strip()}_")
                         _queue_user_input(transcript.strip())
                     else:
-                        st.warning("Could not transcribe audio. Please try again.")
+                        st.warning(
+                            "Could not transcribe audio. "
+                            "Please speak clearly and try again."
+                        )
+
                 except Exception as exc:
                     st.error(f"Transcription error: {exc}")
+                    print(f"[Transcribe] ERROR: {type(exc).__name__}: {exc}")
+
+                finally:
+                    if tmp_path and os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                            print(f"[Transcribe] Deleted temp file: {tmp_path}")
+                        except Exception as cleanup_err:
+                            print(f"[Transcribe] Cleanup failed: {cleanup_err}")
 
 
 # ─────────────────────────────────────────────

@@ -7,6 +7,15 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 import speech_recognition as sr
 from rich.panel import Panel
+import os
+import warnings
+
+os.environ["LLAMA_CPP_LOG_LEVEL"] = "error" 
+os.environ["GGML_LOG_LEVEL"] = "error"    
+os.environ["TRANSFORMERS_VERBOSITY"] = "error"
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", message=".*__path__.*")
+
 
 from .config import (
     SYSTEM_MESSAGE,
@@ -235,26 +244,52 @@ class VoiceAssistant:
             prompt = f"Previous conversation:\n{context}\n\nCurrent user prompt: {prompt}"
         if provider_context:
             prompt = f"{prompt}\n\nAdditional context from providers:\n{provider_context}"
-        
-        # Intent Router controls RAG execution via the use_rag boolean
+
         if use_rag and RAG_ENABLED and self.vectorstore:
             log("Executing vector similarity search for context injection.", title="RAG", style="dim")
             retrieved = self._retrieve_and_process(base_prompt)
+
             if retrieved:
-                # Ép context PDF lên trên, đặt lại câu hỏi xuống DƯỚI CÙNG
-                prompt = (
-                    f"===== RELEVANT DOCUMENTS =====\n"
+                rag_instruction = (
+                    "===== RELEVANT DOCUMENTS =====\n"
                     f"{retrieved}\n"
-                    f"==============================\n\n"
-                    f"Instruction: Read the above documents carefully. DO NOT use external knowledge.\n"
-                    f"Based on the documents, answer the user's question:\n"
+                    "==============================\n\n"
+                    "Instruction: Read the above documents carefully. "
+                    "DO NOT use external knowledge.\n"
+                    "If the answer is not in the documents, clearly state: "
+                    "'This information is not available in the provided documents'.\n"
+                    "Always cite which document [DOC X] your answer comes from.\n\n"
+                    f"Based ONLY on the documents above, answer:\n"
                     f"USER QUERY: {prompt}"
                 )
+                final_prompt = rag_instruction
+            else:
+                final_prompt = (
+                    f"{prompt}\n\n"
+                    "[Note: No relevant documents were found in the knowledge base. "
+                    "You may answer using general knowledge.]"
+                )
+        else:
+            general_system_message = (
+                "You are a multi-modal AI voice assistant. Your user may or may not have "
+                "attached a photo for context (either a screenshot or a webcam capture). "
+                "Any photo has already been processed into a highly detailed text prompt "
+                "that will be attached to their transcribed voice prompt. Generate the most "
+                "useful and factual response possible, carefully considering all previous "
+                "generated text in your response before adding new tokens to the response. "
+                "Do not expect or request images, just use the context if added. "
+                "Use all of the context of this conversation so your response is relevant "
+                "to the conversation. Make your responses clear and concise, avoiding any verbosity."
+            )
+            self.convo[0] = {"role": "system", "content": general_system_message}
+            final_prompt = prompt
+
+        # ── Build message payload ──
         if img_context and self.llm_provider.supports_vision:
             self.convo.append({
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": prompt},
+                    {"type": "text", "text": final_prompt},
                     {
                         "type": "image_url",
                         "image_url": {"url": img_context},
@@ -263,10 +298,10 @@ class VoiceAssistant:
             })
         else:
             if img_context and not self.llm_provider.supports_vision:
-                prompt = f"{prompt}\n\n[User attached an image but vision is not supported]"
-            self.convo.append({"role": "user", "content": prompt})
+                final_prompt = f"{final_prompt}\n\n[User attached an image but vision is not supported]"
+            self.convo.append({"role": "user", "content": final_prompt})
 
-
+        # ── Stream LLM response → TTS ──
         full_response_text = ""
 
         def speakable_chunks():
@@ -276,6 +311,10 @@ class VoiceAssistant:
                 yield chunk
 
         self.tts_provider.stream_speak(speakable_chunks())
+
+        if not use_rag:
+            from .config import SYSTEM_MESSAGE
+            self.convo[0] = {"role": "system", "content": SYSTEM_MESSAGE}
 
         self.conversation_context.add_exchange(base_prompt, full_response_text)
         return full_response_text
