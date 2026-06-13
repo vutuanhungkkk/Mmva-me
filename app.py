@@ -24,7 +24,7 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# Custom CSS — light background, dark text
+# Custom CSS — light background, dark text + Audio Wave Animation
 # ─────────────────────────────────────────────
 st.markdown(
     """
@@ -61,20 +61,20 @@ st.markdown(
         clear: both;    
     }
     .assistant-bubble {
-    background: #FFFFFF;
-    color: #1A1A2E;
-    border-radius: 18px 18px 18px 4px;
-    padding: 12px 18px;
-    margin: 6px auto 6px 0;
-    font-size: 15px;
-    line-height: 1.6;
-    border: 1px solid #E0E0E0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.07);
-    display: inline-block;
-    max-width: 80%;      
-    word-wrap: break-word; 
-    float: left;   
-    clear: both;     
+        background: #FFFFFF;
+        color: #1A1A2E;
+        border-radius: 18px 18px 18px 4px;
+        padding: 12px 18px;
+        margin: 6px auto 6px 0;
+        font-size: 15px;
+        line-height: 1.6;
+        border: 1px solid #E0E0E0;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.07);
+        display: inline-block;
+        max-width: 80%;      
+        word-wrap: break-word; 
+        float: left;   
+        clear: both;     
     }
     .role-label {
         font-size: 11px;
@@ -85,6 +85,31 @@ st.markdown(
     }
     .user-label   { color: #4F8EF7; text-align: right; clear: both;}
     .assistant-label { color: #6C757D; }
+    
+    /* AUDIO WAVE CSS */
+    .audio-wave {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        margin-right: 8px;
+        height: 14px;
+    }
+    .audio-wave span {
+        display: block;
+        width: 3px;
+        height: 100%;
+        background-color: #4F8EF7;
+        animation: wave-animation 1.2s infinite ease-in-out;
+    }
+    .audio-wave span:nth-child(1) { animation-delay: -1.2s; }
+    .audio-wave span:nth-child(2) { animation-delay: -1.1s; }
+    .audio-wave span:nth-child(3) { animation-delay: -1.0s; }
+    .audio-wave span:nth-child(4) { animation-delay: -0.9s; }
+    @keyframes wave-animation {
+        0%, 40%, 100% { transform: scaleY(0.3); }
+        20% { transform: scaleY(1); }
+    }
+    
     .stTextInput > div > div > input {
         background: #FFFFFF;
         color: #1A1A2E;
@@ -149,14 +174,14 @@ _init_state()
 
 
 # ─────────────────────────────────────────────
-# Provider metadata  (only providers present in code)
+# Provider metadata
 # ─────────────────────────────────────────────
 PROVIDERS = {
     "deepseek":  {"label": "DeepSeek",          "needs_key": True,  "env": "DEEPSEEK_API_KEY"},
     "openai":    {"label": "OpenAI",             "needs_key": True,  "env": "OPENAI_API_KEY"},
     "anthropic": {"label": "Anthropic Claude",   "needs_key": True,  "env": "ANTHROPIC_API_KEY"},
-    "google": {"label": "Google Gemini",   "needs_key": True,  "env": "GOOGLE_API_KEY"},
-    "local":     {"label": "Local (Meta-Llama)",  "needs_key": False, "env": None},
+    "google":    {"label": "Google Gemini",      "needs_key": True,  "env": "GOOGLE_API_KEY"},
+    "local":     {"label": "Local (Qwen)", "needs_key": False, "env": None},
 }
 
 
@@ -194,6 +219,10 @@ def render_sidebar() -> None:
             st.info("No API key required for local models.")
             st.session_state.api_key = ""
 
+        # TTS Provider di chuyển lên trên nút Apply & Start
+        st.markdown("---")
+        st.markdown("### 🔊 TTS Provider")
+        st.info("Kokoro TTS (default)")
         st.markdown("---")
 
         if st.button("🚀 Apply & Start Assistant", use_container_width=True):
@@ -204,27 +233,17 @@ def render_sidebar() -> None:
         else:
             st.warning("⚠️ Configure and start the assistant.")
 
+        # Thông tin app và Author ở Sidebar
         st.markdown("---")
-        st.markdown("### 🔊 TTS Provider")
-        st.info("Kokoro TTS (default)")
-        st.markdown("---")
-
-        if st.button("🗑️ Clear Conversation", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.pending_input = None
-            st.session_state.is_processing = False
-            if st.session_state.assistant:
-                st.session_state.assistant.conversation_context.forget()
-            st.rerun()
-
-        st.markdown("---")
+        st.markdown("### ℹ️ About")
+        st.markdown("**App:** Multi-modal AI Voice Assistant")
+        st.markdown("**Author:** Vu Tuan Hung")
 
 
 # ─────────────────────────────────────────────
 # Assistant initialisation
 # ─────────────────────────────────────────────
 def _init_assistant() -> None:
-    """Inject env vars from the UI, then instantiate VoiceAssistant."""
     provider = st.session_state.provider
     meta = PROVIDERS[provider]
 
@@ -252,7 +271,6 @@ def _init_assistant() -> None:
 # Chat history renderer
 # ─────────────────────────────────────────────
 def render_chat_history() -> None:
-    """Render all completed conversation turns."""
     for msg in st.session_state.messages:
         role      = msg["role"]
         content   = msg["content"]
@@ -263,7 +281,7 @@ def render_chat_history() -> None:
                         unsafe_allow_html=True)
             st.markdown(
                 f'<div class="user-bubble">{content}</div>'
-                '<div style="clear:both"></div>',   # ← clear float
+                '<div style="clear:both"></div>',
                 unsafe_allow_html=True,
             )
             if msg.get("image_bytes"):
@@ -273,7 +291,7 @@ def render_chat_history() -> None:
                         unsafe_allow_html=True)
             st.markdown(
                 f'<div class="assistant-bubble">{content}</div>'
-                '<div style="clear:both"></div>',   # ← clear float
+                '<div style="clear:both"></div>',
                 unsafe_allow_html=True,
             )
             if audio_b64:
@@ -284,21 +302,14 @@ def render_chat_history() -> None:
 # Phase 1 — Queue the user's input, rerun immediately
 # ─────────────────────────────────────────────
 def _queue_user_input(prompt: str, image_bytes: Optional[bytes] = None) -> None:
-    """
-    Append the user bubble to the conversation right away, store the
-    pending work, and trigger a rerun so the UI updates before we call
-    the (potentially slow) LLM.
-    """
     if not st.session_state.assistant_ready or not st.session_state.assistant:
         st.error("Please initialise the assistant first (sidebar → Apply & Start).")
         return
 
-    # Build display content
     user_display = prompt or ""
     if image_bytes:
         user_display = f"[Image attached]\n{prompt}" if prompt else "[Image attached]"
 
-    # Encode image to base64 now so we don't carry raw bytes across reruns
     image_b64: Optional[str] = None
     if image_bytes:
         image_b64 = (
@@ -306,33 +317,25 @@ def _queue_user_input(prompt: str, image_bytes: Optional[bytes] = None) -> None:
             + base64.b64encode(image_bytes).decode("utf-8")
         )
 
-    # ── Append user turn immediately ──
     st.session_state.messages.append({
         "role":        "user",
         "content":     user_display,
-        "image_bytes": image_bytes,   # kept only for thumbnail rendering
+        "image_bytes": image_bytes,   
     })
 
-    # ── Store work for Phase 2 ──
     st.session_state.pending_input = {
         "prompt":    prompt,
         "image_b64": image_b64,
     }
     st.session_state.is_processing = True
 
-    # Rerun → render user bubble + spinner, THEN Phase 2 runs
     st.rerun()
 
 
 # ─────────────────────────────────────────────
-# Phase 2 — Call LLM, show text, then play audio
+# Phase 2 — Call LLM, show live text sync, then play audio
 # ─────────────────────────────────────────────
 def _process_pending_input() -> None:
-    """
-    Called on the rerun that follows _queue_user_input().
-    Runs the LLM, appends the assistant text bubble immediately,
-    then appends audio in a second rerun.
-    """
     pending = st.session_state.pending_input
     if pending is None:
         return
@@ -341,65 +344,87 @@ def _process_pending_input() -> None:
     image_b64 = pending["image_b64"]
     assistant = st.session_state.assistant
 
-    # Clear pending so we don't re-enter on the next rerun
     st.session_state.pending_input = None
     st.session_state.is_processing = False
 
-    # ── Step A: Get LLM text response ──
-    with st.spinner("🤔 Thinking…"):
-        try:
-            # Collect TTS audio while the assistant streams the answer
-            response_text, audio_b64 = _call_llm_and_capture_audio(
-                assistant, prompt, image_b64
-            )
-        except Exception as exc:
-            response_text = f"⚠️ Error: {exc}"
-            audio_b64     = None
+    # Build an empty container for inserting the streaming UI
+    stream_container = st.empty()
 
-    # ── Step B: Append assistant message (text + audio together) ──
-    # Text will render first because the audio widget appears below the bubble
+    try:
+        response_text, audio_b64 = _call_llm_and_capture_audio(
+            assistant, prompt, image_b64, stream_container
+        )
+    except Exception as exc:
+        response_text = f"⚠️ Error: {exc}"
+        audio_b64     = None
+        stream_container.empty()
+
+    # Once stream is completely over, we remove the container 
+    # and append it officially to history.
+    stream_container.empty()
+
     st.session_state.messages.append({
         "role":      "assistant",
         "content":   response_text,
-        "audio_b64": audio_b64,       # None → no player shown
+        "audio_b64": audio_b64,       
     })
 
-    # Final rerun to display the complete assistant turn
+    # Display the static completed final output
     st.rerun()
 
 
 # ─────────────────────────────────────────────
-# LLM call + best-effort TTS audio capture
+# LLM call + Live UI Text Sync + Audio capture
 # ─────────────────────────────────────────────
 def _call_llm_and_capture_audio(
     assistant,
     prompt: str,
     img_context: Optional[str],
+    ui_container,  # Receive UI placeholder for realtime streaming
 ) -> tuple[str, Optional[str]]:
-    """
-    Call assistant.run_once() and, if the TTS provider supports
-    synthesize_to_bytes(), also capture a WAV for the inline player.
+    
+    # ── Initial State: Thinking ──
+    ui_container.markdown(
+        '<p class="role-label assistant-label">🤖 Assistant</p>'
+        '<div class="assistant-bubble" style="color:#6C757D; font-style:italic;">🤔 Thinking...</div>'
+        '<div style="clear:both"></div>',
+        unsafe_allow_html=True
+    )
 
-    Returns (response_text, audio_b64 | None).
-    """
     audio_chunks: list[bytes] = []
 
-    # ── Monkey-patch stream_speak to intercept text & capture audio ──
+    # ── Monkey-patch stream_speak to intercept text & UI ──
     original_stream_speak = assistant.tts_provider.stream_speak
 
     def capturing_stream_speak(chunks_iter):
-        """Pass through to the real TTS, then try to capture WAV bytes."""
         collected: list[str] = []
 
         def tee(it):
+            first_chunk = True
             for chunk in it:
+                if first_chunk and chunk.strip():
+                    first_chunk = False
+                
                 collected.append(chunk)
+                current_text = "".join(collected)
+                
+                # Update UI container real-time with speaking animation & parsed text
+                wave_html = '<div class="audio-wave"><span></span><span></span><span></span><span></span></div>'
+                
+                ui_container.markdown(
+                    f'<p class="role-label assistant-label">🤖 Assistant</p>'
+                    f'<div class="assistant-bubble">'
+                    f'<div style="margin-bottom:8px;">{wave_html}</div>'
+                    f'<div>{current_text}</div>'
+                    f'</div><div style="clear:both"></div>',
+                    unsafe_allow_html=True
+                )
                 yield chunk
 
-        # Play audio through speakers as normal
+        # Play audio through speakers as normal while streaming the UI
         original_stream_speak(tee(chunks_iter))
 
-        # Re-synthesize to bytes for the in-browser audio player
+        # Re-synthesize to bytes for the offline/in-browser historical player
         full_text = "".join(collected)
         if full_text and hasattr(assistant.tts_provider, "synthesize_to_bytes"):
             try:
@@ -407,11 +432,10 @@ def _call_llm_and_capture_audio(
                 if wav:
                     audio_chunks.append(wav)
             except Exception:
-                pass  # audio capture is best-effort
+                pass  
 
     assistant.tts_provider.stream_speak = capturing_stream_speak
     try:
-        # Use run_once() — the unified entry point added in core.py
         response_text = assistant.run_once(
             prompt=prompt,
             image_b64=img_context,
@@ -501,13 +525,12 @@ def render_text_input() -> None:
     if submitted and user_text and user_text.strip():
         _queue_user_input(user_text.strip())
 
+
 # ─────────────────────────────────────────────
 # Audio helper utilities
 # ─────────────────────────────────────────────
-
 def _detect_audio_format(raw_bytes: bytes) -> str:
     if len(raw_bytes) < 4:
-        print("[Audio] raw_bytes too short to detect format.")
         return "unknown"
     if raw_bytes[:4] == b"RIFF":
         return "wav"
@@ -515,8 +538,6 @@ def _detect_audio_format(raw_bytes: bytes) -> str:
         return "webm"
     if raw_bytes[:4] == b"OggS":
         return "ogg"
-
-    print(f"[Audio] Unknown header bytes: {raw_bytes[:4].hex()}")
     return "unknown"
 
 
@@ -524,7 +545,6 @@ def _read_wav_with_soundfile(wav_bytes: bytes):
     try:
         buf = io.BytesIO(wav_bytes)
         audio_data, sample_rate = sf.read(buf, dtype="float32")
-        print(f"[Audio] soundfile read OK: {sample_rate}Hz, shape={audio_data.shape}")
         return audio_data, sample_rate
     except Exception as e:
         print(f"[Audio] soundfile read failed: {e}")
@@ -534,7 +554,6 @@ def _read_wav_with_soundfile(wav_bytes: bytes):
 def _write_wav_with_soundfile(audio_data: np.ndarray, sample_rate: int) -> bytes:
     if audio_data.ndim == 2:
         audio_data = audio_data.mean(axis=1)
-        print(f"[Audio] Converted stereo to mono.")
     if sample_rate != 16000:
         duration = len(audio_data) / sample_rate
         target_length = int(duration * 16000)
@@ -543,28 +562,21 @@ def _write_wav_with_soundfile(audio_data: np.ndarray, sample_rate: int) -> bytes
             np.arange(len(audio_data)),
             audio_data,
         )
-        print(f"[Audio] Resampled {sample_rate}Hz → 16000Hz ({target_length} samples)")
         sample_rate = 16000
 
     out_buf = io.BytesIO()
     sf.write(out_buf, audio_data, sample_rate, format="WAV", subtype="PCM_16")
     result = out_buf.getvalue()
-    print(f"[Audio] Written WAV: {len(result)} bytes at 16kHz mono PCM_16")
     return result
 
 
 def _convert_audio_to_wav(raw_bytes: bytes) -> bytes | None:
     fmt = _detect_audio_format(raw_bytes)
-    print(f"[Audio] _convert_audio_to_wav: fmt={fmt}, size={len(raw_bytes)} bytes")
-
     if fmt == "wav":
         audio_data, sample_rate = _read_wav_with_soundfile(raw_bytes)
         if audio_data is not None:
             return _write_wav_with_soundfile(audio_data, sample_rate)
-        print("[Audio] soundfile failed on WAV bytes — returning None.")
         return None
-
-    print(f"[Audio] Format '{fmt}' not decodable by soundfile — returning None for temp-file fallback.")
     return None
 
 
@@ -573,11 +585,9 @@ def _get_suffix_for_format(fmt: str) -> str:
         "wav":     ".wav",
         "webm":    ".webm",
         "ogg":     ".ogg",
-        "unknown": ".webm",  # Best guess — browsers usually emit WebM
+        "unknown": ".webm",
     }
-    result = mapping.get(fmt, ".webm")
-    print(f"[Audio] _get_suffix_for_format: '{fmt}' → '{result}'")
-    return result
+    return mapping.get(fmt, ".webm")
 
 
 def _save_audio_to_tempfile(raw_bytes: bytes, suffix: str) -> str:
@@ -588,14 +598,12 @@ def _save_audio_to_tempfile(raw_bytes: bytes, suffix: str) -> str:
     )
     tmp.write(raw_bytes)
     tmp.close()
-    print(f"[Audio] Saved temp file: {tmp.name} ({len(raw_bytes)} bytes)")
     return tmp.name
 
 
 # ─────────────────────────────────────────────
 # Input mode: Voice
 # ─────────────────────────────────────────────
-
 def render_audio_input() -> None:
     st.markdown("#### 🎙️ Voice Input")
 
@@ -619,7 +627,6 @@ def render_audio_input() -> None:
         wav_bytes = _convert_audio_to_wav(raw_bytes)
 
         if wav_bytes:
-            # Clean normalized WAV — browser can play this directly
             st.audio(wav_bytes, format="audio/wav")
         else:
             st.caption(
@@ -634,19 +641,13 @@ def render_audio_input() -> None:
                     from assistant.speech import wav_to_text
 
                     transcript: str = ""
-
                     if wav_bytes is not None:
-                        print("[Transcribe] Path A: normalized WAV → BytesIO")
                         audio_buffer = io.BytesIO(wav_bytes)
                         transcript = wav_to_text(audio_buffer)
-
                     else:
                         suffix = _get_suffix_for_format(fmt)
                         tmp_path = _save_audio_to_tempfile(raw_bytes, suffix)
-                        print(f"[Transcribe] Path B: temp file → {tmp_path}")
                         transcript = wav_to_text(tmp_path)
-
-                    print(f"[Transcribe] Raw transcript: {transcript!r}")
 
                     if transcript and transcript.strip():
                         st.markdown(f"**Transcript:** _{transcript.strip()}_")
@@ -659,22 +660,17 @@ def render_audio_input() -> None:
 
                 except Exception as exc:
                     st.error(f"Transcription error: {exc}")
-                    print(f"[Transcribe] ERROR: {type(exc).__name__}: {exc}")
-
                 finally:
                     if tmp_path and os.path.exists(tmp_path):
                         try:
                             os.remove(tmp_path)
-                            print(f"[Transcribe] Deleted temp file: {tmp_path}")
-                        except Exception as cleanup_err:
-                            print(f"[Transcribe] Cleanup failed: {cleanup_err}")
+                        except Exception: pass
 
 
 # ─────────────────────────────────────────────
 # Input mode: Image
 # ─────────────────────────────────────────────
 def render_image_input() -> None:
-    """Upload an image + optional question, then queue."""
     st.markdown("#### 🖼️ Image Input")
 
     disabled = st.session_state.is_processing
@@ -708,7 +704,6 @@ def render_image_input() -> None:
 # Input mode: PDF RAG
 # ─────────────────────────────────────────────
 def render_pdf_input() -> None:
-    """Upload a PDF, rebuild the RAG index dynamically, and queue the question."""
     st.markdown("#### 📄 PDF Document (RAG)")
 
     disabled = st.session_state.is_processing
@@ -744,14 +739,11 @@ def render_pdf_input() -> None:
             
         st.success(f"Successfully saved {uploaded_pdf.name}.")
         
-        # Dynamically trigger the vector database rebuild using the assistant instance
         if st.session_state.assistant:
             with st.spinner("Indexing PDF into RAG vectorstore..."):
                 st.session_state.assistant.rebuild_rag()
                 
         prompt = pdf_prompt.strip() or "Please summarize the provided document."
-        
-        # Inject an intent routing marker into the prompt for the core to parse
         routed_prompt = f"[INTENT: DOC_QA] {prompt}"
         _queue_user_input(routed_prompt)
 
@@ -768,16 +760,19 @@ def main() -> None:
         "🤖 AI Voice Assistant</h1>",
         unsafe_allow_html=True,
     )
+    # Thêm thông tin App và Author: Vu Tuan Hung vào tiêu đề
     st.markdown(
         "<p style='color:#6C757D;font-size:15px;margin-top:4px'>"
-        "Multi-modal assistant — text, voice &amp; image inputs · Kokoro TTS</p>",
+        "Multi-modal assistant — text, voice &amp; image inputs · Kokoro TTS<br>"
+        "<b>Author: Vu Tuan Hung</b></p>",
         unsafe_allow_html=True,
     )
     st.markdown("---")
 
-    # ── Chat history ──
-    with st.container():
-        if not st.session_state.messages:
+    # ── Chat history (Nằm trong scrollable container) ──
+    chat_container = st.container(height=500)
+    with chat_container:
+        if not st.session_state.messages and not st.session_state.is_processing:
             st.markdown(
                 "<div style='text-align:center;padding:40px;color:#B0B8C1'>"
                 "<p style='font-size:3rem'>💬</p>"
@@ -787,29 +782,28 @@ def main() -> None:
             )
         else:
             render_chat_history()
-
-    # ── Spinner shown between user bubble and assistant reply ──
-    if st.session_state.is_processing:
-        st.markdown(
-            "<div style='color:#6C757D;font-size:14px;padding:8px 0'>"
-            "⏳ Assistant is thinking…</div>",
-            unsafe_allow_html=True,
-        )
-        # This is the rerun where Phase 2 actually executes
-        _process_pending_input()
-        return   # _process_pending_input() ends with st.rerun(); nothing below runs
+            
+        # ── Processor Phase 2 (Phải ở bên trong container để text sinh ra nằm trong khung) ──
+        if st.session_state.is_processing:
+            _process_pending_input()
+            return
 
     st.markdown("---")
 
     # ── Input mode selector ──
-    st.markdown("### Choose Input Mode")
-    input_mode = st.radio(
-        "Input mode",
-        options=["💬 Text", "🎙️ Voice", "🖼️ Image", "📄 PDF"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="input_mode_radio",
-    )
+    col_title, col_radio = st.columns([2, 8])
+
+    with col_title:
+        st.markdown("**Choose Input Mode**")
+
+    with col_radio:
+        input_mode = st.radio(
+            "Input mode",
+            options=["💬 Text", "🎙️ Voice", "🖼️ Image", "📄 PDF"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="input_mode_radio",
+        )
     st.markdown("")
 
     if input_mode == "💬 Text":
@@ -821,6 +815,17 @@ def main() -> None:
     else:
         render_pdf_input()
 
+    # ── Nút Clear Conversation được đưa ra bên ngoài và nằm bên dưới widgets nhập liệu ──
+    st.markdown("<div style='margin-top:15px'></div>", unsafe_allow_html=True)
+    col_gap, col_clear = st.columns([8, 2])
+    with col_clear:
+        if st.button("🗑️ Clear Conversation", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.pending_input = None
+            st.session_state.is_processing = False
+            if st.session_state.assistant:
+                st.session_state.assistant.conversation_context.forget()
+            st.rerun()
 
 if __name__ == "__main__":
     main()
