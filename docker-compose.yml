@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────
+# Docker Compose for Multimodal AI Voice Assistant
+# Requires: NVIDIA Docker runtime (nvidia-container-toolkit)
+# Author: Vu Tuan Hung
+# ─────────────────────────────────────────────────────────────────
+version: '3.8'
+
+services:
+  voice-assistant:
+    # ── Build from local Dockerfile ──
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    # ── Container name ──
+    container_name: multimodal-voice-assistant
+
+    # ── GPU access: expose all NVIDIA GPUs with CUDA capability ──
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    # ── Port mapping: host:container ──
+    ports:
+      - "8501:8501"
+
+    # ── Volume mounts ──
+    # Mount heavy files from host instead of baking into image
+    volumes:
+      # Mount model files (read-only, very large files)
+      - ./models:/app/models:ro
+
+      # Mount documents folder (read-write for PDF uploads)
+      - ./documents:/app/documents:rw
+
+      # Mount vector database (read-write for RAG indexing)
+      - ./vector_db:/app/vector_db:rw
+
+      # Optional: mount source code for live development
+      # Comment this out for production build
+      # - ./assistant:/app/assistant:ro
+
+    # ── Environment variables ──
+    # Sensitive API keys should be in .env file (not committed to git)
+    environment:
+      - PYTHONUNBUFFERED=1
+      - CUDA_VISIBLE_DEVICES=0
+      - NVIDIA_VISIBLE_DEVICES=all
+      # LLM and TTS provider defaults
+      - LLM_PROVIDER=local
+      - TTS_PROVIDER=kokoro
+      # API keys (loaded from .env file below)
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+
+    # ── Load sensitive variables from .env file ──
+    env_file:
+      - .env
+
+    # ── Restart policy ──
+    restart: unless-stopped
+
+    # ── Resource limits (adjust based on your GPU VRAM) ──
+    shm_size: '2gb'   # Shared memory for PyTorch DataLoader workers
+
+    # ── Healthcheck ──
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    # ── Logging configuration ──
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"

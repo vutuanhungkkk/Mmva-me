@@ -1,0 +1,55 @@
+﻿# Python cache - not needed in image
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+.Python
+
+# Virtual environments
+venv/
+env/
+.venv/
+conda-env/
+
+# Large model files - will be mounted as volume instead
+models/
+*.gguf
+*.onnx
+*.bin
+
+# Vector database - will be mounted as volume
+vector_db/
+
+# Documents - will be mounted as volume
+documents/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Environment files (security)
+.env
+*.env
+
+# Test files
+tests/
+test_*.py
+
+# Docker files themselves
+Dockerfile*
+docker-compose*.yml
