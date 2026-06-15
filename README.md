@@ -203,3 +203,7 @@ ai-voice-assistant/
 ```
 
 ---
+
+
+## 📁 Video demo
+https://drive.google.com/file/d/1mE15tUzLERc6ZY2IS33p-gG2Po2-aAnH/view?usp=drive_link
