@@ -180,7 +180,7 @@ class VoiceAssistant:
 
             embeddings = HuggingFaceEmbeddings(
                 model_name="sentence-transformers/all-MiniLM-L6-v2",
-                model_kwargs={"device": "cpu"},
+                model_kwargs={"device": "cuda"},
             )
 
             self.vectorstore = Chroma(persist_directory=RAG_VECTOR_DB_DIR, embedding_function=embeddings)
@@ -255,12 +255,12 @@ class VoiceAssistant:
                     f"{retrieved}\n"
                     "==============================\n\n"
                     "Instruction: Read the above documents carefully. "
-                    "DO NOT use external knowledge.\n"
-                    "If the answer is not in the documents, clearly state: "
-                    "'This information is not available in the provided documents'.\n"
+                    "Answer the question with a SPECIFIC, DIRECT answer (name, term, or phrase). "
+                    "DO NOT answer with dates or years unless the question asks for them.\n"
+                    "If the answer is not in the documents, clearly state so.\n"
                     "Always cite which document [DOC X] your answer comes from.\n\n"
-                    f"Based ONLY on the documents above, answer:\n"
-                    f"USER QUERY: {prompt}"
+                    f"Question: {prompt}\n"
+                    f"Answer:"
                 )
                 final_prompt = rag_instruction
             else:
@@ -272,7 +272,7 @@ class VoiceAssistant:
         else:
             general_system_message = (
                 "You are a multi-modal AI voice assistant. Your user may or may not have "
-                "attached a photo for context (either a screenshot or a webcam capture). "
+                "attached a photo for context. "
                 "Any photo has already been processed into a highly detailed text prompt "
                 "that will be attached to their transcribed voice prompt. Generate the most "
                 "useful and factual response possible, carefully considering all previous "

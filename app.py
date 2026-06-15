@@ -255,8 +255,16 @@ def _init_assistant() -> None:
 
     try:
         import importlib
-        import assistant.config as cfg
-        importlib.reload(cfg)
+        import sys
+        modules_to_reload = [
+            key for key in sys.modules
+            if key.startswith("assistant")
+        ]
+        for mod_name in modules_to_reload:
+            try:
+                importlib.reload(sys.modules[mod_name])
+            except Exception:
+                pass
 
         from assistant.core import VoiceAssistant
         st.session_state.assistant = VoiceAssistant()
@@ -347,7 +355,6 @@ def _process_pending_input() -> None:
     st.session_state.pending_input = None
     st.session_state.is_processing = False
 
-    # Build an empty container for inserting the streaming UI
     stream_container = st.empty()
 
     try:
@@ -359,8 +366,6 @@ def _process_pending_input() -> None:
         audio_b64     = None
         stream_container.empty()
 
-    # Once stream is completely over, we remove the container 
-    # and append it officially to history.
     stream_container.empty()
 
     st.session_state.messages.append({
@@ -368,8 +373,16 @@ def _process_pending_input() -> None:
         "content":   response_text,
         "audio_b64": audio_b64,       
     })
-
-    # Display the static completed final output
+    st.markdown('<p class="role-label assistant-label">🤖 Assistant</p>',
+                unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="assistant-bubble">{response_text}</div>'
+        '<div style="clear:both"></div>',
+        unsafe_allow_html=True,
+    )
+    if audio_b64:
+        audio_bytes = base64.b64decode(audio_b64)
+        st.audio(audio_bytes, format="audio/wav")
     st.rerun()
 
 
@@ -380,9 +393,9 @@ def _call_llm_and_capture_audio(
     assistant,
     prompt: str,
     img_context: Optional[str],
-    ui_container,  # Receive UI placeholder for realtime streaming
+    ui_container,
 ) -> tuple[str, Optional[str]]:
-    
+
     # ── Initial State: Thinking ──
     ui_container.markdown(
         '<p class="role-label assistant-label">🤖 Assistant</p>'
@@ -393,24 +406,23 @@ def _call_llm_and_capture_audio(
 
     audio_chunks: list[bytes] = []
 
-    # ── Monkey-patch stream_speak to intercept text & UI ──
+    # ── Monkey-patch stream_speak để intercept text & audio ──
     original_stream_speak = assistant.tts_provider.stream_speak
 
     def capturing_stream_speak(chunks_iter):
         collected: list[str] = []
 
         def tee(it):
-            first_chunk = True
             for chunk in it:
-                if first_chunk and chunk.strip():
-                    first_chunk = False
-                
                 collected.append(chunk)
                 current_text = "".join(collected)
-                
-                # Update UI container real-time with speaking animation & parsed text
-                wave_html = '<div class="audio-wave"><span></span><span></span><span></span><span></span></div>'
-                
+
+                wave_html = (
+                    '<div class="audio-wave">'
+                    '<span></span><span></span>'
+                    '<span></span><span></span>'
+                    '</div>'
+                )
                 ui_container.markdown(
                     f'<p class="role-label assistant-label">🤖 Assistant</p>'
                     f'<div class="assistant-bubble">'
@@ -421,19 +433,33 @@ def _call_llm_and_capture_audio(
                 )
                 yield chunk
 
-        # Play audio through speakers as normal while streaming the UI
-        original_stream_speak(tee(chunks_iter))
+        original_synth = getattr(assistant.tts_provider, "synthesize_to_bytes", None)
 
-        # Re-synthesize to bytes for the offline/in-browser historical player
-        full_text = "".join(collected)
-        if full_text and hasattr(assistant.tts_provider, "synthesize_to_bytes"):
-            try:
-                wav = assistant.tts_provider.synthesize_to_bytes(full_text)
-                if wav:
-                    audio_chunks.append(wav)
-            except Exception:
-                pass  
+        def capturing_synth(text: str) -> bytes:
+            wav = original_synth(text)
+            if wav:
+                audio_chunks.append(wav)
+            return wav
 
+
+        if original_synth is not None:
+            assistant.tts_provider.synthesize_to_bytes = capturing_synth
+
+        try:
+            original_stream_speak(tee(chunks_iter))
+        finally:
+            if original_synth is not None:
+                assistant.tts_provider.synthesize_to_bytes = original_synth
+
+        if not audio_chunks:
+            full_text = "".join(collected)
+            if full_text and original_synth is not None:
+                try:
+                    wav = original_synth(full_text)
+                    if wav:
+                        audio_chunks.append(wav)
+                except Exception:
+                    pass
     assistant.tts_provider.stream_speak = capturing_stream_speak
     try:
         response_text = assistant.run_once(
