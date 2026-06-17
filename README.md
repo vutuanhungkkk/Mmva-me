@@ -179,31 +179,7 @@ Upload an image (JPG / PNG / WebP) → type a question (optional) → click **Se
 The vision LLM will describe and answer questions about the image.
 
 ### 📄 PDF / RAG
-Upload a PDF → it is automatically indexed into ChromaDB → ask questions grounded in the document.
-
----
-
-## 📁 Project Structure
-
-```
-ai-voice-assistant/
-├── app.py                  ← Streamlit UI
-├── assistant/
-│   ├── core.py             ← VoiceAssistant orchestration
-│   ├── speech.py           ← Whisper STT
-│   ├── config.py           ← Environment & paths
-│   └── ...
-├── models/                 ← Place .gguf model files here (not in repo)
-├── documents/              ← PDF upload directory
-├── vector_db/              ← ChromaDB persistent store
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-└── .env.example            ← Copy to .env and fill in your API keys
-```
-
----
-
+Upload a PDF → it is automatically indexed into ChromaDB → ask questions grounded in the document
 
 ## 📁 Video demo
 https://drive.google.com/file/d/1mE15tUzLERc6ZY2IS33p-gG2Po2-aAnH/view?usp=drive_link
