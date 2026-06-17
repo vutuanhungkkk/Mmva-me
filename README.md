@@ -100,7 +100,7 @@ sudo systemctl restart docker
 #### Step 2 — Clone the Repository
 ```bash
 git clone https://github.com/vutuanhungkkk/Mmva-me.git
-cd ai-voice-assistant
+cd Mmva-me
 ```
 
 #### Step 3 — Add Your Model Files
